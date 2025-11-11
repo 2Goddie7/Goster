@@ -2,130 +2,59 @@ import axios from 'axios';
 import * as FileSystem from 'expo-file-system';
 import { Audio } from '../../domain/entities/Audio';
 import { Mastering } from '../../domain/entities/Mastering';
+import Constants from "expo-constants";
 
-const API_BASE_URL = 'https://api.aimastering.com';
 
-// Genera una API key temporal para guest
-const generateGuestApiKey = (): string => {
-  const randomString = Math.random().toString(36).substring(2, 15) + 
-                       Math.random().toString(36).substring(2, 15);
-  return `guest_${randomString}`;
-};
+const API_URL = "https://api.ai-mastering.com/v1";
+const API_KEY = Constants.expoConfig?.extra?.AI_MASTERING_API_KEY;
 
 export class AIMasteringDataSource {
-  private apiKey: string;
-
-  constructor() {
-    this.apiKey = generateGuestApiKey();
-  }
-
-  private getHeaders() {
-    return {
-      'Authorization': `Bearer ${this.apiKey}`,
-      'Content-Type': 'application/json',
-    };
-  }
-
-  async uploadAudio(uri: string, fileName: string): Promise<Audio> {
+  async createMastering(file: { uri: string; name: string; type: string }) {
     try {
-      // Leer el archivo como base64
-      const base64 = await FileSystem.readAsStringAsync(uri, {
-        encoding: FileSystem.EncodingType.Base64,
-      });
-
-      // Crear FormData
       const formData = new FormData();
-      formData.append('file', {
-        uri: uri,
-        type: 'audio/wav',
-        name: fileName,
+      formData.append("file", {
+        uri: file.uri,
+        name: file.name,
+        type: file.type,
       } as any);
 
-      // Subir el audio
-      const response = await axios.post(
-        `${API_BASE_URL}/audios`,
-        formData,
-        {
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'multipart/form-data',
-          },
-        }
-      );
-
-      return {
-        id: response.data.id,
-        fileName: fileName,
-        createdAt: new Date(response.data.created_at),
-      };
-    } catch (error: any) {
-      console.error('Error uploading audio:', error.response?.data || error.message);
-      throw new Error('Error al subir el audio');
-    }
-  }
-
-  async createMastering(audioId: string): Promise<Mastering> {
-    try {
-      const response = await axios.post(
-        `${API_BASE_URL}/masterings`,
-        {
-          input_audio_id: audioId,
-          mode: 'default',
+      const response = await axios.post(`${API_URL}/masterings`, formData, {
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
         },
-        { headers: this.getHeaders() }
-      );
+      });
 
-      return {
-        id: response.data.id,
-        inputAudioId: response.data.input_audio_id,
-        outputAudioId: response.data.output_audio_id,
-        status: response.data.status,
-        progression: response.data.progression || 0,
-        createdAt: new Date(response.data.created_at),
-      };
+      return response.data;
     } catch (error: any) {
-      console.error('Error creating mastering:', error.response?.data || error.message);
-      throw new Error('Error al crear el mastering');
+      throw new Error(error.response?.data || error.message);
     }
   }
 
-  async getMasteringStatus(masteringId: string): Promise<Mastering> {
+  async getMasteringStatus(id: string) {
     try {
-      const response = await axios.get(
-        `${API_BASE_URL}/masterings/${masteringId}`,
-        { headers: this.getHeaders() }
-      );
-
-      return {
-        id: response.data.id,
-        inputAudioId: response.data.input_audio_id,
-        outputAudioId: response.data.output_audio_id,
-        status: response.data.status,
-        progression: response.data.progression || 0,
-        createdAt: new Date(response.data.created_at),
-      };
+      const response = await axios.get(`${API_URL}/masterings/${id}`, {
+        headers: {
+          Authorization: `Bearer ${API_KEY}`,
+        },
+      });
+      return response.data;
     } catch (error: any) {
-      console.error('Error getting mastering status:', error.response?.data || error.message);
-      throw new Error('Error al obtener el estado del mastering');
+      throw new Error(error.response?.data || error.message);
     }
   }
 
-  async downloadAudio(audioId: string): Promise<string> {
+  async downloadMasteredAudio(url: string) {
     try {
-      const response = await axios.get(
-        `${API_BASE_URL}/audios/${audioId}/download`,
-        {
-          headers: this.getHeaders(),
-          responseType: 'blob',
-        }
-      );
+      // Para descargar y guardar localmente en Expo:
+      // IMPORTANTE: Aquí mejor usaremos FileSystem.downloadAsync si tú lo deseas.
+      const { default: FileSystem } = await import("expo-file-system");
+      const localUri = FileSystem.documentDirectory + `mastered-${Date.now()}.mp3`;
 
-      // En React Native, necesitarías guardar el blob y retornar la URI
-      // Por simplicidad, retornamos la URL de descarga
-      return `${API_BASE_URL}/audios/${audioId}/download`;
+      const result = await FileSystem.downloadAsync(url, localUri);
+
+      return result.uri; // Devolvemos la ruta local del archivo
     } catch (error: any) {
-      console.error('Error downloading audio:', error.response?.data || error.message);
-      throw new Error('Error al descargar el audio');
+      throw new Error(error.response?.data || error.message);
     }
   }
 }
